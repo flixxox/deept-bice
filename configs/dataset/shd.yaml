@@ -1,0 +1,13 @@
+dataset_root:   '/Scratch/fschmidt/data/SHD-jelly'
+
+train_dataset:  'shd'
+dev_dataset:    'shd'
+
+dataloader:          'shd'
+dataloader_workers:  4
+
+input_dim:      700
+output_dim:     20
+time_step:      10
+num_bins:       5
+maxT:           126

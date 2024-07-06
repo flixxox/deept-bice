@@ -1,0 +1,2 @@
+train_rqmt_gpus:  1
+train_rqmt_mem:  '16G'

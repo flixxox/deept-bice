@@ -1,0 +1,113 @@
+batch_size:     256
+seed:           0
+
+# ~~~~~~~~ WandB ~~~~~~~~
+
+wandb_project:  'dendritic-snn'
+wandb_mode:     'online'
+
+# ~~~~~~~~ Checkpoints ~~~~~~~~
+
+checkpoints:                  True
+checkpoint_unit:              'Epoch' # ['Step', 'Epoch']
+checkpoint_strategy:          'All'   # ['All', 'Best']
+checkpoint_period:            1
+checkpoint_start_after:       5
+units_to_train:               150
+
+average_last_after_best_checkpoints:  False
+average_last_checkpoints:             False
+best_checkpoint_indicator:            'acc'
+best_checkpoint_indicator_goal:       'max' # ['min', 'max']
+
+# ~~~~~~~~ Criterions, Scores, Optimizer ~~~~~~~~
+
+average_gradients:         False
+allow_none_type_gradients: True
+
+criterions: [
+  {
+    score_type: 'CrossEntropy',
+    input_keys: ['targets'],
+    reduce_type: 'avg_counts'
+  }
+]
+
+scores: [
+  {
+    score_type: 'Accuracy',
+    input_keys: ['targets'],
+    reduce_type: 'avg_counts'
+  },
+  {
+    score_type: 'FiringRate',
+    input_keys: ['all_spikes'],
+    reduce_type: 'avg_counts'
+  }
+]
+
+optimizers: [
+  {
+    optim_type: 'Adam',
+    param_groups: [
+      {
+        name: 'weights',
+        weight_decay: 0.00001,
+        init_lr: 0.001,
+      },
+      {
+        name: 'batchnorms',
+        weight_decay: 0,
+        init_lr: 0.001,
+      }
+    ],
+    lr_scheduler: {
+      lr_type: 'OneCycle',
+      max_lr: 0.005,
+      per_step: False,
+      total_steps: 150
+    }
+  },
+  {
+    optim_type: 'Adam',
+    param_groups: [
+      {
+        name: 'delays',
+        weight_decay: 0,
+        init_lr: 0.1
+      }
+    ],
+    lr_scheduler: {
+      lr_type: 'CosineAnnealing',
+      tmax: 150,
+      per_step: False
+    }
+  }
+]
+
+# ~~~~~~~~ Model ~~~~~~~~
+
+model:          'delayLIF'
+model_input:    ['data']
+
+n_layers:       2
+hidden_size:    256
+threshold:      1.0
+dropout:        0.4
+
+# Delays
+init_tau:                   10.05
+max_delay:                  25
+sigma_init:                 12
+sigma_decrease_final_epoch: 37
+
+# ~~~~~~~~ Sweep ~~~~~~~~
+
+do_sweep: True
+sweep_configuration: {
+  method: 'random',
+  count: 200,
+  parameters: {
+    seed: {values: [0, 41, 80420, 90, 172]},
+  }
+}

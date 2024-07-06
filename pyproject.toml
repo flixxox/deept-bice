@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "deept_bice"
+version = "0.1.0"
+description = ""
+authors = ["Elidona Shiqerukaj", "Felix Schmidt"]
+
+[tool.poetry.dependencies]
+python = ">=3.11.6,<3.13"
+numpy = "^1.25.0"
+pyyaml = "^6.0"
+matplotlib = "^3.8.1"
+tonic = "^1.4.2"
+torchvision = "^0.16.1"
+spikingjelly = "^0.0.0.0.14"
+dcls = "^0.1.1"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
