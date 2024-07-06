@@ -3,19 +3,36 @@ from typing import Callable, Optional
 
 import torch
 import numpy as np
-from spikingjelly.datasets import pad_sequence_collate
 from spikingjelly.datasets.shd import SpikingHeidelbergDigits
 
 from deept.data.dataset import register_dataset
 from deept.data.dataloader import register_dataloader
+from deept_bice.components.spikoder import RandomFixedSpecialTokenEncoder
 
 
 def pad_sequence_collate_as_dict(batch):
-    batch = pad_sequence_collate(batch)
+    data_list = []
+    data_len_list = []
+    label_list = []
+    sos_list = []
+
+    for data, label, sos in batch:
+        data_list.append(torch.as_tensor(data))
+        data_len_list.append(data.shape[0])
+        label_list.append(label)
+        sos_list.append(sos)
+
+    data = torch.nn.utils.rnn.pad_sequence(data_list, batch_first=True)
+    labels = torch.as_tensor(label_list)
+    data_len = torch.as_tensor(data_len_list)
+    sos = torch.cat(sos_list, dim=0)
+
     return {
         'tensors': {
-            'data': batch[0].float(),
-            'targets': batch[1].long()
+            'data': data.float(),
+            'labels': labels.long(),
+            'data_len': data_len,
+            'sos': sos
         }
     }
 
@@ -31,6 +48,8 @@ class BinnedSpikingHeidelbergDigits(SpikingHeidelbergDigits):
             self,
             root,
             n_bins,
+            input_dim,
+            special_token_fr,
             train=None,
             duration=None,
     ):
@@ -44,13 +63,20 @@ class BinnedSpikingHeidelbergDigits(SpikingHeidelbergDigits):
         )
         self.n_bins = n_bins
 
+        self.special_token_encoder = RandomFixedSpecialTokenEncoder(
+            input_dim//n_bins,
+            special_token_fr,
+        )
+
     @staticmethod
     def create_from_config(config, is_train):
         return BinnedSpikingHeidelbergDigits(
             config['dataset_root'],
             config['num_bins'],
+            config['input_dim'],
+            config['special_token_fr'],
             train=is_train,
-            duration=config['time_step']
+            duration=config['time_step'],
         )
 
     def __getitem__(self, i: int):
@@ -60,8 +86,10 @@ class BinnedSpikingHeidelbergDigits(SpikingHeidelbergDigits):
         binned_frames = np.zeros((frames.shape[0], binned_len))
         for i in range(binned_len):
             binned_frames[:,i] = frames[:, self.n_bins*i : self.n_bins*(i+1)].sum(axis=1)
+
+        sos = self.special_token_encoder.get_special_token()
         
-        return binned_frames, label
+        return binned_frames, label, sos
 
 
 @register_dataloader('shd')

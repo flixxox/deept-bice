@@ -55,3 +55,57 @@ class FiringRate(Score):
         fr_accum = (fr_accum / numel) * 1000
         self.accumulators[0].increase(fr_accum, numel)
         return None, None
+
+
+@register_score('LMRegressionLoss')
+class LMRegressionLoss(Score):
+
+    def __init__(self, input_keys, reduce_type, **kwargs):
+        super().__init__(input_keys, reduce_type)
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+        self.register_accumulator('lmloss')
+
+        self.input_dim = self.input_dim // self.num_bins
+
+        if self.loss_function_descr == 'neuron':
+            self.loss_fn = self._per_neuron_loss
+        elif self.loss_function_descr == 'activity':
+            self.loss_fn = self._activity_loss
+        else:
+            raise ValueError(f'Did not recognize loss_function! Given: {self.loss_function_descr}')
+
+    @staticmethod
+    def create_from_config(config, input_keys, reduce_type):
+        return LMRegressionLoss(
+            input_keys, reduce_type,
+            num_bins = config['num_bins'],
+            input_dim = config['input_dim'],
+            encoding_length = config['encoding_length'],
+            loss_function_descr = config['criterions'][0]['loss_function']
+        )
+
+    def __call__(self, output, data, label, sos):
+        B = data.shape[0]
+        J = self.input_dim
+        T_d = data.shape[1]
+        T_l = self.encoding_length
+
+        assert list(sos.shape) == [B, J]
+        assert list(data.shape) == [B, T_d, J]
+        assert list(output.shape) == [B, T_d+T_l+2, J]
+        assert list(label.shape) == [B, T_l, J]
+
+        loss = self.loss_fn(output, data, label)
+        
+        self.accumulators[0].increase(loss, numel)
+
+        return None, None
+
+    def _per_neuron_loss(self, output, data, label):
+        return 0.
+    
+    def _activity_loss(self, output, data, label):
+        return 0.
