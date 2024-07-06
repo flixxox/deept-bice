@@ -13,7 +13,7 @@ from spikingjelly.activation_based import surrogate
 from deept.utils.debug import my_print
 from deept.utils.globals import Settings
 from deept.components.model import register_model
-from deept_snn.components.modules import DropoutOverTime
+from deept_bice.components.modules import DropoutOverTime
 
 
 @register_model('delayLIF')
