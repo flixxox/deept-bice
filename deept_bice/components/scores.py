@@ -5,6 +5,32 @@ from deept.components.scores import (
     register_score
 )
 
+
+def _per_neuron_similarity_fn(out, tgt, reduce=True):
+        numel = out.numel()
+
+        loss = torch.abs(out - tgt)
+        # Always reduce feature dim
+        loss = torch.mean(loss, dim=-1)
+        
+        if reduce:
+            loss = torch.mean(loss)
+
+        return loss, numel
+    
+def _activity_similarity_fn(out, tgt, reduce=True):
+    numel = out.numel()
+
+    out = torch.mean(out, dim=-1)
+    tgt = torch.mean(tgt, dim=-1)
+    loss = torch.sqrt(out - tgt)
+
+    if reduce:
+        loss = torch.mean(loss)
+
+    return loss, numel
+
+
 @register_score('Accuracy')
 class Accuracy(Score):
 
@@ -71,9 +97,9 @@ class LMRegressionLoss(Score):
         self.input_dim = self.input_dim // self.num_bins
 
         if self.loss_function_descr == 'neuron':
-            self.loss_fn = self._per_neuron_loss
+            self.loss_fn = _per_neuron_similarity_fn
         elif self.loss_function_descr == 'activity':
-            self.loss_fn = self._activity_loss
+            self.loss_fn = _activity_similarity_fn
         else:
             raise ValueError(f'Did not recognize loss_function! Given: {self.loss_function_descr}')
 
@@ -87,25 +113,87 @@ class LMRegressionLoss(Score):
             loss_function_descr = config['criterions'][0]['loss_function']
         )
 
-    def __call__(self, output, data, label, sos):
-        B = data.shape[0]
+    def __call__(self, out, tgt):
+        B = out.shape[0]
+        T = out.shape[1]
         J = self.input_dim
-        T_d = data.shape[1]
-        T_l = self.encoding_length
 
-        assert list(sos.shape) == [B, J]
-        assert list(data.shape) == [B, T_d, J]
-        assert list(output.shape) == [B, T_d+T_l+2, J]
-        assert list(label.shape) == [B, T_l, J]
+        assert list(tgt.shape) == [B, T, J]
+        assert list(out.shape) == [B, T, J]
 
-        loss = self.loss_fn(output, data, label)
+        loss, numel = self.loss_fn(out, tgt)
         
         self.accumulators[0].increase(loss, numel)
 
-        return None, None
+        loss = loss / numel
 
-    def _per_neuron_loss(self, output, data, label):
-        return 0.
-    
-    def _activity_loss(self, output, data, label):
-        return 0.
+        return loss, numel
+
+
+@register_score('LMAccuracy')
+class LMAccuracy(Score):
+
+    def __init__(self, input_keys, reduce_type, **kwargs):
+        super().__init__(input_keys, reduce_type)
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+        self.input_dim = self.input_dim // self.num_bins
+        
+        if self.similarity_fn_descr == 'neuron':
+            self.similarity_fn = _per_neuron_similarity_fn
+        elif self.similarity_fn_descr == 'activity':
+            self.similarity_fn = _activity_similarity_fn
+        else:
+            raise ValueError(f'Did not recognize loss_function! Given: {self.similarity_fn_descr}')
+        
+        self.register_accumulator('lm_acc')
+
+    @staticmethod
+    def create_from_config(config, input_keys, reduce_type):
+        return LMAccuracy(
+            input_keys, reduce_type,
+            num_bins = config['num_bins'],
+            input_dim = config['input_dim'],
+            num_classes = config['output_dim'],
+            encoding_length = config['encoding_length'],
+            similarity_fn_descr = config['criterions'][0]['loss_function']
+        )
+
+    def __call__(self, out, labels, label_seqs):
+        B = out.shape[0]
+        T = out.shape[1]
+        J = self.input_dim
+        C = self.num_classes
+        T_l = self.encoding_length
+        
+        assert list(labels.shape) == [B]
+        assert list(label_seqs.shape) == [C, T_l, J]
+        
+        # Extract \hat{l} without the last symbol
+        # because it is predicting the sos token
+        out = out[:,T-T_l-1:-1,:]
+
+        assert list(out.shape) == [B, T_l, J]
+
+        out = out.unsqueeze(1)
+        label_seqs = label_seqs.unsqueeze(0)
+
+        loss, _ = self.similarity_fn(out, label_seqs, reduce=False)
+
+        assert list(loss.shape) == [B, C, T_l]
+
+        loss = torch.mean(loss, dim=-1)
+        
+        numel = B
+        pred = torch.argmax(loss, dim=-1)
+
+        assert list(pred.shape) == [B]
+
+        acc = (pred == labels).sum() * 100
+        acc = acc / numel
+
+        self.accumulators[0].increase(acc, numel)
+        
+        return acc, numel

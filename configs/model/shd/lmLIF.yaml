@@ -19,7 +19,7 @@ units_to_train:               150
 
 average_last_after_best_checkpoints:  False
 average_last_checkpoints:             False
-best_checkpoint_indicator:            'acc'
+best_checkpoint_indicator:            'lm_acc'
 best_checkpoint_indicator_goal:       'max' # ['min', 'max']
 
 # ~~~~~~~~ Criterions, Scores, Optimizer ~~~~~~~~
@@ -30,7 +30,7 @@ allow_none_type_gradients: True
 criterions: [
   {
     score_type: 'LMRegressionLoss',
-    input_keys: ['data', 'label_sequence', 'sos'],
+    input_keys: ['tgt'],
     reduce_type: 'avg_counts',
     loss_function: 'neuron' # ['neuron', 'activity']
   }
@@ -38,13 +38,8 @@ criterions: [
 
 scores: [
   {
-    score_type: 'Accuracy',
-    input_keys: ['labels'],
-    reduce_type: 'avg_counts'
-  },
-  {
-    score_type: 'FiringRate',
-    input_keys: ['all_spikes'],
+    score_type: 'LMAccuracy',
+    input_keys: ['labels', 'label_seqs'],
     reduce_type: 'avg_counts'
   }
 ]

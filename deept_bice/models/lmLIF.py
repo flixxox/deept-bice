@@ -8,7 +8,7 @@ from spikingjelly.activation_based import surrogate
 
 from deept.utils.debug import my_print
 from deept.components.model import register_model
-from deept_bice.components.spikoder import Spikoder
+from deept_bice.components.spikoder import RandomFixedSpikoder
 
 
 @register_model('lmLIF')
@@ -22,7 +22,11 @@ class LMLIFSNN(nn.Module):
 
         self.input_dim = self.input_dim // self.num_bins
 
-        self.spikoder = Spikoder()
+        self.spikoder = RandomFixedSpikoder(
+            self.input_dim,
+            self.output_dim,
+            self.encoding_length
+        )
         
         input_dim = self.input_dim
         self.lif_nodes = nn.ModuleList([])
@@ -71,26 +75,28 @@ class LMLIFSNN(nn.Module):
             beta_init_min=config['beta_init_min'],
             beta_init_max=config['beta_init_max'],
             cell_type=config['cell_type'],
-            T_l=config['encoding_length']
+            encoding_length=config['encoding_length'],
+            loss_function_descr=config['criterions'][0]['loss_function']
         )
 
     def forward(self, x, c, sos):
         B = x.shape[0]
         J = x.shape[2]
+        C = self.output_dim
         T_d = x.shape[1]
-        T_l = self.T_l
+        T_l = self.encoding_length
 
         assert list(sos.shape) == [B, J]
 
-        x, tgt, label_seq = self.spikoder(x, c, sos)
+        x, tgt, labels = self.spikoder(x, c, sos)
 
         assert list(x.shape) == [B, T_d+T_l+2, J]
-        assert list(label_seq.shape) == [B, T_l, J]
+        assert list(labels.shape) == [C, T_l, J]
 
         for snn_lay in self.lif_nodes:
             x = snn_lay(x)
         
-        return x, {'tgt': tgt, 'label': label_seq}
+        return x, {'tgt': tgt, 'label_seqs': labels}
 
     def __create_param_groups(self):
         weights = []
