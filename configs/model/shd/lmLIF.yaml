@@ -16,7 +16,7 @@ checkpoint_unit:              'Epoch' # ['Step', 'Epoch']
 checkpoint_strategy:          'All'   # ['All', 'Best']
 checkpoint_period:            1
 checkpoint_start_after:       5
-units_to_train:               150
+units_to_train:               20
 
 average_last_after_best_checkpoints:  False
 average_last_checkpoints:             False
@@ -31,9 +31,8 @@ allow_none_type_gradients: False
 criterions: [
   {
     score_type: 'LMRegressionLoss',
-    input_keys: ['tgt', 'mask'],
+    input_keys: ['tgt', 'mask', 'label_mask'],
     reduce_type: 'avg_counts',
-    loss_function: 'activity' # ['neuron', 'activity']
   }
 ]
 
@@ -52,17 +51,17 @@ optimizers: [
       {
         name: 'weights',
         weight_decay: 0.00001,
-        init_lr: 0.1,
+        init_lr: 0.01,
       },
       {
         name: 'norms',
         weight_decay: 0,
-        init_lr: 0.1,
+        init_lr: 0.01,
       }
     ],
     lr_scheduler: {
       lr_type: 'Constant',
-      lr:  0.1
+      lr:  0.01
     }
   }
 ]
@@ -84,9 +83,14 @@ cell_type:      'hard' # ['soft', 'hard']
 spikoder: 'random_fixed' # ['random_fixed']
 encoding_length: 10
 
-
 # SpecialTokenEncoder
 special_token_fr: 0.5
+
+# Loss
+similarity_function:    'activity' # ['neuron', 'activity']
+clamp_tgt_to_one:       True
+lambda_data:            0.
+lambda_label:           1.
 
 # ~~~~~~~~ Sweep ~~~~~~~~
 

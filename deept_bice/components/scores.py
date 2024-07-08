@@ -23,58 +23,6 @@ def _activity_similarity_fn(out, tgt, reduce=True):
     return loss
 
 
-@register_score('Accuracy')
-class Accuracy(Score):
-
-    def __init__(self, input_keys, reduce_type):
-        super().__init__(input_keys, reduce_type)
-        self.register_accumulator('acc')
-
-    @staticmethod
-    def create_from_config(config, input_keys, reduce_type):
-        return Accuracy(
-            input_keys, reduce_type
-        )
-
-    def __call__(self, output, targets):
-        _, idx = output.max(1)
-        numel = targets.numel()
-        acc = (targets == idx).sum() * 100
-        acc = acc / numel
-        self.accumulators[0].increase(acc, numel)
-        return acc, numel
-
-
-@register_score('FiringRate')
-class FiringRate(Score):
-
-    def __init__(self, input_keys, reduce_type,
-        time_step_duration=10
-    ):
-        super().__init__(input_keys, reduce_type)
-        self.time_step_duration = time_step_duration
-        self.register_accumulator('fr')
-
-    @staticmethod
-    def create_from_config(config, input_keys, reduce_type):
-        return FiringRate(
-            input_keys, reduce_type,
-            time_step_duration = config['time_step']
-        )
-
-    def __call__(self, output, all_spikes):
-        numel = len(all_spikes)
-        fr_accum = 0.
-        for x in all_spikes:
-            time_steps = x.shape[1]
-            fr = x.sum(dim=1) / (time_steps * self.time_step_duration)
-            fr = fr.mean()
-            fr_accum += fr
-        fr_accum = (fr_accum / numel) * 1000
-        self.accumulators[0].increase(fr_accum, numel)
-        return None, None
-
-
 @register_score('LMRegressionLoss')
 class LMRegressionLoss(Score):
 
@@ -88,12 +36,12 @@ class LMRegressionLoss(Score):
 
         self.input_dim = self.input_dim // self.num_bins
 
-        if self.loss_function_descr == 'neuron':
-            self.loss_fn = _per_neuron_similarity_fn
-        elif self.loss_function_descr == 'activity':
-            self.loss_fn = _activity_similarity_fn
+        if self.similarity_function_descr == 'neuron':
+            self.similarity_fn = _per_neuron_similarity_fn
+        elif self.similarity_function_descr == 'activity':
+            self.similarity_fn = _activity_similarity_fn
         else:
-            raise ValueError(f'Did not recognize loss_function! Given: {self.loss_function_descr}')
+            raise ValueError(f'Did not recognize loss_function! Given: {self.similarity_function_descr}')
 
     @staticmethod
     def create_from_config(config, input_keys, reduce_type):
@@ -102,24 +50,43 @@ class LMRegressionLoss(Score):
             num_bins = config['num_bins'],
             input_dim = config['input_dim'],
             encoding_length = config['encoding_length'],
-            loss_function_descr = config['criterions'][0]['loss_function']
+            similarity_function_descr = config['similarity_function'],
+            clamp_tgt_to_one = config['clamp_tgt_to_one'],
+            lambda_data = config['lambda_data'],
+            lambda_label = config['lambda_label'],
         )
 
-    def __call__(self, out, tgt, mask):
+    def __call__(self, out, tgt, mask, label_mask):
         B = out.shape[0]
         T = out.shape[1]
         J = self.input_dim
+        lambda_data = self.lambda_data
+        lambda_label = self.lambda_label
 
         assert list(tgt.shape) == [B, T, J]
         assert list(out.shape) == [B, T, J]
+        assert list(mask.shape) == [B, T]
+        assert list(label_mask.shape) == [B, T]
 
-        numel = mask.sum()
-        loss = self.loss_fn(out, tgt)
+        if self.clamp_tgt_to_one:
+            tgt = torch.clamp(tgt, max=1)
+
+        loss = self.similarity_fn(out, tgt)
 
         assert list(loss.shape) == [B, T]
+        
+        data_mask = mask - label_mask
+        numel = (lambda_data * data_mask.sum()
+            + lambda_label * label_mask.sum())
 
-        loss = loss * mask
+        loss = loss * mask # Remove padding
+        loss = (lambda_data * data_mask * loss
+            + lambda_label * label_mask * loss)
         loss = loss.sum() / numel
+        
+        # The loss is super small, we
+        # might get underflowing gradients
+        loss *= 100
 
         self.accumulators[0].increase(loss, numel)
 
@@ -159,7 +126,7 @@ class LMAccuracy(Score):
             input_dim = config['input_dim'],
             num_classes = config['output_dim'],
             encoding_length = config['encoding_length'],
-            similarity_fn_descr = config['criterions'][0]['loss_function']
+            similarity_fn_descr = config['similarity_function']
         )
 
     def __call__(self, out, labels, label_seqs, lens):

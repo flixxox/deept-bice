@@ -11,11 +11,14 @@ from deept.data.dataloader import register_dataloader
 from deept_bice.components.spikoder import RandomFixedSpecialTokenEncoder
 
 
+torch.set_printoptions(edgeitems=100)
+
 def pad_sequence_collate_as_dict(batch):
     inp = []
     tgt = []
     lens = []
     mask = []
+    label_mask = []
     labels = []
     sos = []
 
@@ -28,11 +31,17 @@ def pad_sequence_collate_as_dict(batch):
 
         inp_b = np.append(data_b, placeholder_inp, axis=0)
         tgt_b = np.append(data_b, placeholder_tgt, axis=0)
+
+        label_mask_b = torch.cat(
+            [torch.zeros(l+1), torch.ones(encoding_length+1)],
+            dim=0
+        )
         
         inp.append(torch.as_tensor(inp_b))
         tgt.append(torch.as_tensor(tgt_b))
 
         mask.append(torch.ones(l+encoding_length+2))
+        label_mask.append(label_mask_b)
         lens.append(l)
         labels.append(label_b)
         sos.append(sos_b)
@@ -41,6 +50,8 @@ def pad_sequence_collate_as_dict(batch):
     tgt = torch.nn.utils.rnn.pad_sequence(tgt, batch_first=True)
     
     mask = torch.nn.utils.rnn.pad_sequence(mask, batch_first=True)
+    label_mask = torch.nn.utils.rnn.pad_sequence(label_mask, batch_first=True)
+
     labels = torch.as_tensor(labels)
     lens = torch.as_tensor(lens)
     sos = torch.cat(sos, dim=0)
@@ -51,7 +62,8 @@ def pad_sequence_collate_as_dict(batch):
             'tgt': tgt.float(),
             'labels': labels.long(),
             'lens': lens,
-            'mask': mask.float(), 
+            'mask': mask.float(),
+            'label_mask': label_mask.float(),
             'sos': sos
         }
     }

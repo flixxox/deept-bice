@@ -76,7 +76,7 @@ class LMLIFSNN(nn.Module):
             beta_init_max=config['beta_init_max'],
             cell_type=config['cell_type'],
             encoding_length=config['encoding_length'],
-            loss_function_descr=config['criterions'][0]['loss_function']
+            similarity_function_descr=config['similarity_function']
         )
 
     def forward(self, x, tgt, lens, c, sos):
