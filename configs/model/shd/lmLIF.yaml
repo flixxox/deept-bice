@@ -1,7 +1,8 @@
 # ~~~~~~~~ General ~~~~~~~~
 
-batch_size:     256
-seed:           0
+batch_size:             256
+seed:                   1
+print_per_step_summary: True
 
 # ~~~~~~~~ WandB ~~~~~~~~
 
@@ -25,14 +26,14 @@ best_checkpoint_indicator_goal:       'max' # ['min', 'max']
 # ~~~~~~~~ Criterions, Scores, Optimizer ~~~~~~~~
 
 average_gradients:         False
-allow_none_type_gradients: True
+allow_none_type_gradients: False
 
 criterions: [
   {
     score_type: 'LMRegressionLoss',
     input_keys: ['tgt'],
     reduce_type: 'avg_counts',
-    loss_function: 'neuron' # ['neuron', 'activity']
+    loss_function: 'activity' # ['neuron', 'activity']
   }
 ]
 
@@ -61,7 +62,7 @@ optimizers: [
     ],
     lr_scheduler: {
       lr_type: 'Constant',
-      lr: 0.01
+      lr: 0.1 # 0.01
     }
   }
 ]

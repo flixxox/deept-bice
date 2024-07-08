@@ -95,6 +95,9 @@ class LMLIFSNN(nn.Module):
 
         for snn_lay in self.lif_nodes:
             x = snn_lay(x)
+
+        if torch.mean(x) < 0.001:
+            print('Warning! Low activity on output!')
         
         return x, {'tgt': tgt, 'label_seqs': labels}
 
@@ -148,6 +151,7 @@ class LMLIFLayer(nn.Module):
         self.beta = nn.Parameter(torch.Tensor(self.hidden_size))
         self.sigmoid = nn.Sigmoid()
         self.norm = nn.BatchNorm1d(self.hidden_size)
+        self.random_batchwise_init = RandomBatchwiseInit(0, 1)
     
         if self.cell_type == 'soft':
             self.cell_fn = self._soft_reset_cell
@@ -166,37 +170,36 @@ class LMLIFLayer(nn.Module):
         nn.init.uniform_(self.beta, self.beta_init_min, self.beta_init_max)
 
     def forward(self, x):
-        B = x.shape[1]
-        T = x.shape[0]
+        B = x.shape[0]
+        T = x.shape[1]
         J = x.shape[2]
         I = self.hidden_size
         device = x.device
 
-        assert list(x.shape) == [T, B, J]
-
         x = F.linear(x, weight=self.W)
         beta = self.sigmoid(self.beta)
-        U0 = torch.zeros(B, I).to(device)
+        U0 = self.random_batchwise_init(B, I)
 
-        assert list(x.shape) == [T, B, I]
+        assert list(x.shape) == [B, T, I]
 
-        x = self.norm(x.reshape(T*B, I, 1)).reshape(T, B, I)
+        x = self.norm(x.reshape(B*T, I, 1)).reshape(B, T, I)
         
-        assert list(x.shape) == [T, B, I]
+        assert list(x.shape) == [B, T, I]
 
         o = self.cell_fn(x, U0, U0, beta)
 
         if not self.readout:
             o = self.drop(o)
 
-        assert list(o.shape) == [T, B, I]
+        assert list(o.shape) == [B, T, I]
+
 
         return o
 
     def _soft_reset_cell(self, x, Ut, U0, beta):
         o = []
-        B = x.shape[1]
-        T = x.shape[0]
+        B = x.shape[0]
+        T = x.shape[1]
         I = x.shape[2]
         device = x.device
 
@@ -204,29 +207,44 @@ class LMLIFLayer(nn.Module):
         St = torch.zeros(B, I).to(device)
 
         for t in range(T):
-            Ut = beta * (Ut - theta*St) + (1 - beta) * x[t,:,:]
+            Ut = beta * (Ut - theta*St) + (1 - beta) * x[:,t,:]
             St = self.spike_fct(Ut - theta)
             o.append(St)
 
-        return torch.stack(o, dim=0)
+        return torch.stack(o, dim=1)
 
     def _hard_reset_cell(self, x, Ut, U0, beta):
         o = []
-        T = x.shape[0]
+        T = x.shape[1]
         theta = self.threshold
 
         for t in range(T):
-            Ut = beta * Ut + (1 - beta) * x[t,:,:]
+            Ut = beta * Ut + (1 - beta) * x[:,t,:]
             St = self.spike_fct(Ut - theta)
             Ut = (1 - St.detach()) * Ut + St.detach() * U0
             o.append(St)
 
-        return torch.stack(o, dim=0)
+        return torch.stack(o, dim=1)
 
-    def _readout_cell(self, x, Ut, U0, beta):
-        o = []
-        T = x.shape[0]
-        for t in range(T):
-            Ut = beta * Ut + (1 - beta) * x[t,:,:]
-            o.append(Ut)
-        return torch.stack(o, dim=0)
+
+class RandomBatchwiseInit(nn.Module):
+
+    def __init__(
+        self,
+        init_min,
+        init_max
+    ):
+        super().__init__()
+        self.init_min = init_min
+        self.init_max = init_max
+        self.dummy_param = nn.Parameter(torch.empty(0), requires_grad=False)
+
+    def forward(self, *shape):
+        device = self.dummy_param.get_device()
+        if self.training:
+            return (torch.FloatTensor(*shape)
+                    .uniform_(self.init_min, self.init_max)
+                    .to(device)
+                )
+        else:
+            return torch.zeros(*shape).to(device)

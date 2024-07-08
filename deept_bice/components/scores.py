@@ -19,14 +19,16 @@ def _per_neuron_similarity_fn(out, tgt, reduce=True):
         return loss, numel
     
 def _activity_similarity_fn(out, tgt, reduce=True):
-    numel = out.numel()
 
     out = torch.mean(out, dim=-1)
     tgt = torch.mean(tgt, dim=-1)
-    loss = torch.sqrt(out - tgt)
+
+    loss = torch.pow(out - tgt, 2)
+
+    numel = out.numel()
 
     if reduce:
-        loss = torch.mean(loss)
+        loss = torch.sum(loss)
 
     return loss, numel
 
@@ -122,10 +124,10 @@ class LMRegressionLoss(Score):
         assert list(out.shape) == [B, T, J]
 
         loss, numel = self.loss_fn(out, tgt)
-        
-        self.accumulators[0].increase(loss, numel)
 
         loss = loss / numel
+
+        self.accumulators[0].increase(loss, numel)
 
         return loss, numel
 
@@ -185,9 +187,9 @@ class LMAccuracy(Score):
         assert list(loss.shape) == [B, C, T_l]
 
         loss = torch.mean(loss, dim=-1)
-        
+
         numel = B
-        pred = torch.argmax(loss, dim=-1)
+        pred = torch.argmin(loss, dim=-1)
 
         assert list(pred.shape) == [B]
 
