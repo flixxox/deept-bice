@@ -5,33 +5,53 @@ import torch
 import numpy as np
 from spikingjelly.datasets.shd import SpikingHeidelbergDigits
 
+from deept.utils.globals import Context
 from deept.data.dataset import register_dataset
 from deept.data.dataloader import register_dataloader
 from deept_bice.components.spikoder import RandomFixedSpecialTokenEncoder
 
 
 def pad_sequence_collate_as_dict(batch):
-    data_list = []
-    data_len_list = []
-    label_list = []
-    sos_list = []
+    inp = []
+    tgt = []
+    lens = []
+    mask = []
+    labels = []
+    sos = []
 
-    for data, label, sos in batch:
-        data_list.append(torch.as_tensor(data))
-        data_len_list.append(data.shape[0])
-        label_list.append(label)
-        sos_list.append(sos)
+    placeholder_inp = Context['placeholder_inp']
+    placeholder_tgt = Context['placeholder_tgt']
+    encoding_length = Context['encoding_length']
 
-    data = torch.nn.utils.rnn.pad_sequence(data_list, batch_first=True)
-    labels = torch.as_tensor(label_list)
-    data_len = torch.as_tensor(data_len_list)
-    sos = torch.cat(sos_list, dim=0)
+    for data_b, label_b, sos_b in batch:
+        l = len(data_b)
+
+        inp_b = np.append(data_b, placeholder_inp, axis=0)
+        tgt_b = np.append(data_b, placeholder_tgt, axis=0)
+        
+        inp.append(torch.as_tensor(inp_b))
+        tgt.append(torch.as_tensor(tgt_b))
+
+        mask.append(torch.ones(l+encoding_length+2))
+        lens.append(l)
+        labels.append(label_b)
+        sos.append(sos_b)
+
+    inp = torch.nn.utils.rnn.pad_sequence(inp, batch_first=True)
+    tgt = torch.nn.utils.rnn.pad_sequence(tgt, batch_first=True)
+    
+    mask = torch.nn.utils.rnn.pad_sequence(mask, batch_first=True)
+    labels = torch.as_tensor(labels)
+    lens = torch.as_tensor(lens)
+    sos = torch.cat(sos, dim=0)
 
     return {
         'tensors': {
-            'data': data.float(),
+            'inp': inp.float(),
+            'tgt': tgt.float(),
             'labels': labels.long(),
-            'data_len': data_len,
+            'lens': lens,
+            'mask': mask.float(), 
             'sos': sos
         }
     }
@@ -70,6 +90,18 @@ class BinnedSpikingHeidelbergDigits(SpikingHeidelbergDigits):
 
     @staticmethod
     def create_from_config(config, is_train):
+        J = config['input_dim'] // config['num_bins']
+        T_l = config['encoding_length']
+        
+        Js = [0 for _ in range(J)]
+
+        placeholder_inp = [Js for _ in range(T_l+1)]
+        placeholder_tgt = [Js for _ in range(T_l+2)]
+        
+        Context.add_context('placeholder_inp', np.array(placeholder_inp))
+        Context.add_context('placeholder_tgt', np.array(placeholder_tgt))
+        Context.add_context('encoding_length', T_l)
+        
         return BinnedSpikingHeidelbergDigits(
             config['dataset_root'],
             config['num_bins'],

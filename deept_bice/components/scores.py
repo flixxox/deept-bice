@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 
 from deept.components.scores import (
     Score,
@@ -7,16 +8,10 @@ from deept.components.scores import (
 
 
 def _per_neuron_similarity_fn(out, tgt, reduce=True):
-        numel = out.numel()
-
         loss = torch.abs(out - tgt)
         # Always reduce feature dim
         loss = torch.mean(loss, dim=-1)
-        
-        if reduce:
-            loss = torch.mean(loss)
-
-        return loss, numel
+        return loss
     
 def _activity_similarity_fn(out, tgt, reduce=True):
 
@@ -25,12 +20,7 @@ def _activity_similarity_fn(out, tgt, reduce=True):
 
     loss = torch.pow(out - tgt, 2)
 
-    numel = out.numel()
-
-    if reduce:
-        loss = torch.sum(loss)
-
-    return loss, numel
+    return loss
 
 
 @register_score('Accuracy')
@@ -115,7 +105,7 @@ class LMRegressionLoss(Score):
             loss_function_descr = config['criterions'][0]['loss_function']
         )
 
-    def __call__(self, out, tgt):
+    def __call__(self, out, tgt, mask):
         B = out.shape[0]
         T = out.shape[1]
         J = self.input_dim
@@ -123,9 +113,13 @@ class LMRegressionLoss(Score):
         assert list(tgt.shape) == [B, T, J]
         assert list(out.shape) == [B, T, J]
 
-        loss, numel = self.loss_fn(out, tgt)
+        numel = mask.sum()
+        loss = self.loss_fn(out, tgt)
 
-        loss = loss / numel
+        assert list(loss.shape) == [B, T]
+
+        loss = loss * mask
+        loss = loss.sum() / numel
 
         self.accumulators[0].increase(loss, numel)
 
@@ -149,6 +143,11 @@ class LMAccuracy(Score):
             self.similarity_fn = _activity_similarity_fn
         else:
             raise ValueError(f'Did not recognize loss_function! Given: {self.similarity_fn_descr}')
+
+        self.idx = nn.Parameter(
+            torch.arange(self.encoding_length),
+            requires_grad=False
+        )
         
         self.register_accumulator('lm_acc')
 
@@ -163,7 +162,7 @@ class LMAccuracy(Score):
             similarity_fn_descr = config['criterions'][0]['loss_function']
         )
 
-    def __call__(self, out, labels, label_seqs):
+    def __call__(self, out, labels, label_seqs, lens):
         B = out.shape[0]
         T = out.shape[1]
         J = self.input_dim
@@ -172,17 +171,24 @@ class LMAccuracy(Score):
         
         assert list(labels.shape) == [B]
         assert list(label_seqs.shape) == [C, T_l, J]
-        
-        # Extract \hat{l} without the last symbol
-        # because it is predicting the sos token
-        out = out[:,T-T_l-1:-1,:]
+
+        # Here we extract \hat{l} from the output sequence.
+        # We need to take padding and the last sos into account.
+        # We base the operation on torch.gather, which
+        # works like a index_select over multiple dims.
+
+        idx = self.idx.unsqueeze(0).repeat(B, 1)
+        idx = idx + lens.unsqueeze(1) + 1
+        idx = idx.unsqueeze(-1).repeat(1, 1, J)
+
+        out = torch.gather(out, 1, idx)
 
         assert list(out.shape) == [B, T_l, J]
 
         out = out.unsqueeze(1)
         label_seqs = label_seqs.unsqueeze(0)
 
-        loss, _ = self.similarity_fn(out, label_seqs, reduce=False)
+        loss = self.similarity_fn(out, label_seqs, reduce=False)
 
         assert list(loss.shape) == [B, C, T_l]
 

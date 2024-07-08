@@ -70,28 +70,29 @@ class RandomFixedSpikoder(nn.Module):
 
         return labels
 
-    def forward(self, x, c, sos):
+    def forward(self, x, tgt, lens, c, sos):
 
         B = x.shape[0]
-        J = self.input_dim
         T_l = self.T_l
         device = x.device
+        J = self.input_dim
 
         labels = self.labels
         c = torch.index_select(labels, 0, c)
 
         assert list(c.shape) == [B, T_l, J]
 
+        for b in range(B):
+            
+            x[b,lens[b],:] = sos[b]
+            x[b,lens[b]+1:lens[b]+T_l+1,:] = c[b].detach()
+
+            tgt[b,lens[b],:] = sos[b]
+            tgt[b,lens[b]+1:lens[b]+T_l+1,:] = c[b]
+            tgt[b,lens[b]+T_l+1,:] = sos[b]
+
+
         sos = sos.unsqueeze(1)
+        x = torch.cat([sos, x], dim=1)
 
-        inp = torch.cat(
-            [sos, x, sos, c],
-            dim=1
-        )
-
-        tgt = torch.cat(
-            [x, sos, c, sos],
-            dim=1
-        )
-
-        return inp, tgt, labels
+        return x, tgt, labels

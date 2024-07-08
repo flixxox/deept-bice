@@ -2,7 +2,7 @@
 
 batch_size:             256
 seed:                   1
-print_per_step_summary: True
+print_per_step_summary: False
 
 # ~~~~~~~~ WandB ~~~~~~~~
 
@@ -31,7 +31,7 @@ allow_none_type_gradients: False
 criterions: [
   {
     score_type: 'LMRegressionLoss',
-    input_keys: ['tgt'],
+    input_keys: ['tgt', 'mask'],
     reduce_type: 'avg_counts',
     loss_function: 'activity' # ['neuron', 'activity']
   }
@@ -40,7 +40,7 @@ criterions: [
 scores: [
   {
     score_type: 'LMAccuracy',
-    input_keys: ['labels', 'label_seqs'],
+    input_keys: ['labels', 'label_seqs', 'lens'],
     reduce_type: 'avg_counts'
   }
 ]
@@ -52,17 +52,17 @@ optimizers: [
       {
         name: 'weights',
         weight_decay: 0.00001,
-        init_lr: 0.01,
+        init_lr: 0.1,
       },
       {
         name: 'norms',
         weight_decay: 0,
-        init_lr: 0.01,
+        init_lr: 0.1,
       }
     ],
     lr_scheduler: {
       lr_type: 'Constant',
-      lr: 0.1 # 0.01
+      lr:  0.1
     }
   }
 ]
@@ -70,9 +70,9 @@ optimizers: [
 # ~~~~~~~~ Model ~~~~~~~~
 
 model:          'lmLIF'
-model_input:    ['data', 'labels', 'sos']
+model_input:    ['inp', 'tgt', 'lens', 'labels', 'sos']
 
-n_layers:       2
+n_layers:       3
 hidden_size:    256
 threshold:      0.37
 dropout:        0.4
@@ -90,7 +90,7 @@ special_token_fr: 0.5
 
 # ~~~~~~~~ Sweep ~~~~~~~~
 
-do_sweep: True
+do_sweep: False
 sweep_configuration: {
   method: 'random',
   count: 200,

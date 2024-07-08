@@ -79,25 +79,32 @@ class LMLIFSNN(nn.Module):
             loss_function_descr=config['criterions'][0]['loss_function']
         )
 
-    def forward(self, x, c, sos):
+    def forward(self, x, tgt, lens, c, sos):
         B = x.shape[0]
-        J = x.shape[2]
+        T = x.shape[1]
+        J = self.input_dim
         C = self.output_dim
-        T_d = x.shape[1]
         T_l = self.encoding_length
 
+        assert list(x.shape) == [B, T, J]
+        assert list(tgt.shape) == [B, T+1, J]
+        assert list(lens.shape) == [B]
+        assert list(c.shape) == [B]
         assert list(sos.shape) == [B, J]
 
-        x, tgt, labels = self.spikoder(x, c, sos)
+        x, tgt, labels = self.spikoder(x, tgt, lens, c, sos)
 
-        assert list(x.shape) == [B, T_d+T_l+2, J]
+        assert list(x.shape) == [B, T+1, J]
+        assert list(tgt.shape) == [B, T+1, J]
         assert list(labels.shape) == [C, T_l, J]
 
         for snn_lay in self.lif_nodes:
             x = snn_lay(x)
 
+        assert list(x.shape) == [B, T+1, J]
+
         if torch.mean(x) < 0.001:
-            print('Warning! Low activity on output!')
+            print('Warning! Low activity in output!')
         
         return x, {'tgt': tgt, 'label_seqs': labels}
 
