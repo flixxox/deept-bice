@@ -8,7 +8,7 @@ from spikingjelly.activation_based import surrogate
 
 from deept.utils.debug import my_print
 from deept.components.model import register_model
-from deept_bice.components.spikoder import RandomFixedSpikoder
+from deept_bice.components.spikoder import create_spikoder
 
 
 @register_model('lmLIF')
@@ -22,10 +22,13 @@ class LMLIFSNN(nn.Module):
 
         self.input_dim = self.input_dim // self.num_bins
 
-        self.spikoder = RandomFixedSpikoder(
+        self.spikoder = create_spikoder(
+            self.spikoder_descr,
             self.input_dim,
             self.output_dim,
-            self.encoding_length
+            self.encoding_length,
+            self.sample_labels,
+            self.resample_every_step
         )
         
         input_dim = self.input_dim
@@ -76,6 +79,9 @@ class LMLIFSNN(nn.Module):
             beta_init_max=config['beta_init_max'],
             cell_type=config['cell_type'],
             encoding_length=config['encoding_length'],
+            spikoder_descr=config['spikoder'],
+            sample_labels=config['sample_labels'],
+            resample_every_step=config['resample_every_step'],
             similarity_function_descr=config['similarity_function']
         )
 

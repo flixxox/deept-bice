@@ -8,7 +8,7 @@ from spikingjelly.activation_based import surrogate
 
 from deept.utils.debug import my_print
 from deept.components.model import register_model
-from deept_bice.components.spikoder import RandomFixedSpikoder
+from deept_bice.components.spikoder import create_spikoder
 
 
 @register_model('adLmLIF')
@@ -22,7 +22,7 @@ class adLMLIFSNN(nn.Module):
 
         self.input_dim = self.input_dim // self.num_bins
 
-        self.spikoder = RandomFixedSpikoder(
+        self.spikoder = create_spikoder(
             self.input_dim,
             self.output_dim,
             self.encoding_length
