@@ -77,7 +77,7 @@ threshold:      0.37
 dropout:        0.4
 beta_init_min:  0.4 # note: before sigmoid
 beta_init_max:  0.9 # note: before sigmoid
-cell_type:      'hard' # ['soft', 'hard']
+cell_type:      'soft' # ['soft', 'hard']
 
 # Spikoder
 spikoder: 'random_fixed' # ['random_fixed']

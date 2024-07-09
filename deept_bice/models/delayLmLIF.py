@@ -14,10 +14,11 @@ from deept.utils.debug import my_print
 from deept.utils.globals import Settings
 from deept.components.model import register_model
 from deept_bice.components.modules import DropoutOverTime
+from deept_bice.components.spikoder import RandomFixedSpikoder
 
 
-@register_model('delayLIF')
-class DelayLIFSNN(nn.Module):
+@register_model('delayLmLIF')
+class DelayLMLIFSNN(nn.Module):
 
     def __init__(self, **kwargs):
         super().__init__()
@@ -27,14 +28,55 @@ class DelayLIFSNN(nn.Module):
 
         self.input_dim = self.input_dim // self.num_bins
 
-        self.__init_layers()
-        self.__create_param_groups()
+        self.spikoder = RandomFixedSpikoder(
+            self.input_dim,
+            self.output_dim,
+            self.encoding_length
+        )
+        
+        input_dim = self.input_dim
+        self.lif_nodes = nn.ModuleList([])
+        for i in range(1, self.n_layers):
+            self.lif_nodes.append(
+                DelayLMLIFLayer(
+                    readout=False,
+                    use_norm=True,
+                    input_dim=input_dim,
+                    hidden_size=self.hidden_size,
+                    dropout=self.dropout,
+                    cell_type=self.cell_type,
+                    threshold=self.threshold,
+                    # delayLmLIF
+                    tau=(self.init_tau+1e-9)/self.time_step,
+                    max_delay=self.max_delay,
+                    sigma_init=self.sigma_init, 
+                )
+            )
+            input_dim = self.hidden_size
+
+        self.lif_nodes.append(
+            DelayLMLIFLayer(
+                readout=True,
+                use_norm=True,
+                input_dim=self.hidden_size,
+                hidden_size=self.input_dim,
+                dropout=self.dropout,
+                cell_type=self.cell_type,
+                threshold=self.threshold,
+                # delayLmLIF
+                tau=(self.init_tau+1e-9)/self.time_step,
+                max_delay=self.max_delay,
+                sigma_init=self.sigma_init, 
+            )
+        )
 
         self.sigma = self.lif_nodes[-1].delay.SIG[0,0,0,0].detach().cpu().item()
 
+        self.__create_param_groups()
+
     @staticmethod
     def create_from_config(config):
-        return DelayLIFSNN(
+        return DelayLMLIFSNN(
             input_keys=config['model_input'],
             input_dim=config['input_dim'],
             batch_size=config['batch_size'],
@@ -44,47 +86,15 @@ class DelayLIFSNN(nn.Module):
             threshold=config['threshold'],
             n_layers=config['n_layers'],
             num_bins=config['num_bins'],
+            cell_type=config['cell_type'],
+            encoding_length=config['encoding_length'],
+            similarity_function_descr=config['similarity_function'],
             # delayLIF
             init_tau=config['init_tau'],
             time_step=config['time_step'],
             max_delay=config['max_delay'],
             sigma_init=config['sigma_init'],
             sigma_decrease_final_epoch=config['sigma_decrease_final_epoch']
-        )
-
-    def __init_layers(self):
-
-        self.lif_nodes = nn.ModuleList([])
-        
-        input_dim = self.input_dim
-        for i in range(1, self.n_layers+1):
-            self.lif_nodes.append(
-                DelayLIFLayer(
-                    readout=False,
-                    use_norm=True,
-                    input_dim=input_dim,
-                    hidden_size=self.hidden_size,
-                    dropout=self.dropout,
-                    threshold=self.threshold,
-                    # delayLIF
-                    tau=(self.init_tau+1e-9)/self.time_step,
-                    max_delay=self.max_delay,
-                    sigma_init=self.sigma_init, 
-                )
-            )
-            input_dim = self.hidden_size
-
-        self.readout = DelayLIFLayer(
-            readout=True,
-            use_norm=False,
-            input_dim=self.hidden_size,
-            hidden_size=self.output_dim,
-            dropout=self.dropout,
-            threshold=1e9,
-            # delayLIF
-            tau=(self.init_tau+1e-9)/self.time_step,
-            max_delay=self.max_delay,
-            sigma_init=self.sigma_init, 
         )
 
     def __create_param_groups(self):
@@ -95,7 +105,7 @@ class DelayLIFSNN(nn.Module):
         delays_names = []
         weights_names = []
         batchnorm_names = []
-        for lif_node in self.lif_nodes + [self.readout]:
+        for lif_node in self.lif_nodes:
             for name, param in lif_node.named_parameters():
                 if param.requires_grad:
                     if name == 'delay.P':
@@ -123,23 +133,34 @@ class DelayLIFSNN(nn.Module):
             'batchnorms': [p for p in batchnorms],
         }
 
-    def forward(self, x):
+    def forward(self, x, tgt, lens, c, sos):
+        B = x.shape[0]
+        T = x.shape[1]
+        J = self.input_dim
+        C = self.output_dim
+        T_l = self.encoding_length
 
-        x = x.permute(1,0,2)
+        assert list(x.shape) == [B, T, J]
+        assert list(tgt.shape) == [B, T+1, J]
+        assert list(lens.shape) == [B]
+        assert list(c.shape) == [B]
+        assert list(sos.shape) == [B, J]
 
-        all_spikes = []
-        for i, snn_lay in enumerate(self.lif_nodes):
+        x, tgt, labels = self.spikoder(x, tgt, lens, c, sos)
+
+        assert list(x.shape) == [B, T+1, J]
+        assert list(tgt.shape) == [B, T+1, J]
+        assert list(labels.shape) == [C, T_l, J]
+
+        x = x.permute(1,0,2) # [B, T, J] -> [T, B, J]
+        for snn_lay in self.lif_nodes:
             x = snn_lay(x)
-            all_spikes.append(x.permute(1,0,2).detach())
-            
-        x = self.readout(x)
+        x = x.permute(1,0,2) # [T, B, J] -> [B, T, J]
 
-        x = F.softmax(x, dim=2)
-        x = x.sum(0) # [T, B, I] -> [B, I]
-
-        return x, {
-            'all_spikes': all_spikes
-        }
+        if torch.mean(x) < 0.001:
+            print('Warning! Low activity in output!')
+        
+        return x, {'tgt': tgt, 'label_seqs': labels}
 
     # ~~~~~ Callbacks and Callback helpers
 
@@ -204,7 +225,7 @@ class DelayLIFSNN(nn.Module):
         self.load_state_dict(ckpt, strict=True)
 
 
-class DelayLIFLayer(nn.Module):
+class DelayLMLIFLayer(nn.Module):
 
     def __init__(self,
         **kwargs
@@ -222,7 +243,9 @@ class DelayLIFLayer(nn.Module):
         self.init_pos_b = self.max_delay // 2
 
         self.left_padding = self.max_delay - 1
-        self.right_padding = (self.max_delay - 1) // 2
+        # In contrast to the original implementation we 
+        # do not use right_padding to preserve the time dimension
+        self.right_padding = 0 #(self.max_delay - 1) // 2
 
         self.spike_fct = surrogate.ATan(alpha=5.0)
 
@@ -236,10 +259,19 @@ class DelayLIFLayer(nn.Module):
             dilated_kernel_size=self.max_delay,
         )
         
+        self.random_batchwise_init = RandomBatchwiseInit(0, 1)
+
         if self.use_norm:
             self.norm = nn.BatchNorm1d(self.hidden_size)
         if not self.readout:
             self.drop = DropoutOverTime(self.dropout)
+
+        if self.cell_type == 'soft':
+            self.cell_fn = self._soft_reset_cell
+        elif self.cell_type == 'hard':
+            self.cell_fn = self._hard_reset_cell
+        else:
+            raise ValueError(f'Unrecognized cell_type argument {self.cell_type}!')
 
         self.__init()
     
@@ -254,9 +286,8 @@ class DelayLIFLayer(nn.Module):
         self.delay.SIG.requires_grad = False
 
     def forward(self, x):
-
-        B = x.shape[1]
         T = x.shape[0]
+        B = x.shape[1]
         J = x.shape[2]
         I = self.hidden_size
         device = x.device
@@ -270,8 +301,6 @@ class DelayLIFLayer(nn.Module):
         x = self.delay(x)
         x = x.permute(2,0,1) # [B, I, T] -> [T, B, I]
 
-        T = x.shape[0] # T changed during conv
-
         # ~~~~ Norm
 
         assert list(x.shape) == [T, B, I]
@@ -283,20 +312,9 @@ class DelayLIFLayer(nn.Module):
 
         assert list(x.shape) == [T, B, I]
 
-        Ut = torch.zeros(B, I).to(device)
+        U0 = self.random_batchwise_init(B, I)
 
-        o = []
-        for t in range(T):
-            Ut = Ut * self.beta + x[t,:,:]
-
-            if self.readout:
-                o.append(Ut)
-            else:
-                St = self.spike_fct(Ut - self.threshold)
-                Ut = (1 - St.detach()) * Ut
-                o.append(St)
-
-        o = torch.stack(o, dim=0)
+        o = self.cell_fn(x, U0, U0, self.beta)
 
         if not self.readout:
             o = self.drop(o)
@@ -304,3 +322,52 @@ class DelayLIFLayer(nn.Module):
         assert list(o.shape) == [T, B, I]
 
         return o
+
+    def _soft_reset_cell(self, x, Ut, U0, beta):
+        o = []
+        T = x.shape[0]
+        B = x.shape[1]
+        I = x.shape[2]
+        device = x.device
+
+        theta = self.threshold
+        St = torch.zeros(B, I).to(device)
+
+        for t in range(T):
+            Ut = Ut - theta*St + beta * x[t,:,:]
+            St = self.spike_fct(Ut - theta)
+            o.append(St)
+
+        return torch.stack(o, dim=0)
+
+    def _hard_reset_cell(self, x, Ut, U0, beta):
+        o = []
+        T = x.shape[0]
+        theta = self.threshold
+
+        for t in range(T):
+            Ut = Ut + beta * x[t,:,:]
+            St = self.spike_fct(Ut - theta)
+            Ut = (1 - St.detach()) * Ut + St.detach() * U0
+            o.append(St)
+
+        return torch.stack(o, dim=0)
+
+class RandomBatchwiseInit(nn.Module):
+
+    def __init__(
+        self,
+        init_min,
+        init_max
+    ):
+        super().__init__()
+        self.init_min = init_min
+        self.init_max = init_max
+        self.dummy_param = nn.Parameter(torch.empty(0), requires_grad=False)
+
+    def forward(self, *shape):
+        device = self.dummy_param.get_device()
+        return (torch.FloatTensor(*shape)
+            .uniform_(self.init_min, self.init_max)
+            .to(device)
+        )

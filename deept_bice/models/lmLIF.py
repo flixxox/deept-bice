@@ -248,10 +248,7 @@ class RandomBatchwiseInit(nn.Module):
 
     def forward(self, *shape):
         device = self.dummy_param.get_device()
-        if self.training:
-            return (torch.FloatTensor(*shape)
-                    .uniform_(self.init_min, self.init_max)
-                    .to(device)
-                )
-        else:
-            return torch.zeros(*shape).to(device)
+        return (torch.FloatTensor(*shape)
+            .uniform_(self.init_min, self.init_max)
+            .to(device)
+        )

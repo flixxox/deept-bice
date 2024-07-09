@@ -1,10 +1,13 @@
-batch_size:     256
-seed:           0
+# ~~~~~~~~ General ~~~~~~~~
+
+batch_size:             256
+seed:                   1
+print_per_step_summary: False
 
 # ~~~~~~~~ WandB ~~~~~~~~
 
 wandb_project:  'dendritic-snn'
-wandb_mode:     'online'
+wandb_mode:     'offline'
 
 # ~~~~~~~~ Checkpoints ~~~~~~~~
 
@@ -17,7 +20,7 @@ units_to_train:               150
 
 average_last_after_best_checkpoints:  False
 average_last_checkpoints:             False
-best_checkpoint_indicator:            'acc'
+best_checkpoint_indicator:            'lm_acc'
 best_checkpoint_indicator_goal:       'max' # ['min', 'max']
 
 # ~~~~~~~~ Criterions, Scores, Optimizer ~~~~~~~~
@@ -27,21 +30,16 @@ allow_none_type_gradients: True
 
 criterions: [
   {
-    score_type: 'CrossEntropy',
-    input_keys: ['targets'],
-    reduce_type: 'avg_counts'
+    score_type: 'LMRegressionLoss',
+    input_keys: ['tgt', 'mask', 'label_mask'],
+    reduce_type: 'avg_counts',
   }
 ]
 
 scores: [
   {
-    score_type: 'Accuracy',
-    input_keys: ['targets'],
-    reduce_type: 'avg_counts'
-  },
-  {
-    score_type: 'FiringRate',
-    input_keys: ['all_spikes'],
+    score_type: 'LMAccuracy',
+    input_keys: ['labels', 'label_seqs', 'lens'],
     reduce_type: 'avg_counts'
   }
 ]
@@ -53,12 +51,12 @@ optimizers: [
       {
         name: 'weights',
         weight_decay: 0.00001,
-        init_lr: 0.001,
+        init_lr: 0.005,
       },
       {
         name: 'batchnorms',
         weight_decay: 0,
-        init_lr: 0.001,
+        init_lr: 0.005,
       }
     ],
     lr_scheduler: {
@@ -87,13 +85,14 @@ optimizers: [
 
 # ~~~~~~~~ Model ~~~~~~~~
 
-model:          'delayLIF'
-model_input:    ['data']
+model:          'delayLmLIF'
+model_input:    ['inp', 'tgt', 'lens', 'labels', 'sos']
 
-n_layers:       2
+n_layers:       3
 hidden_size:    256
-threshold:      1.0
+threshold:      0.37
 dropout:        0.4
+cell_type:      'soft' # ['soft', 'hard']
 
 # Delays
 init_tau:                   10.05
@@ -101,9 +100,22 @@ max_delay:                  25
 sigma_init:                 12
 sigma_decrease_final_epoch: 37
 
+# Spikoder
+spikoder: 'random_fixed' # ['random_fixed']
+encoding_length: 10
+
+# SpecialTokenEncoder
+special_token_fr: 0.5
+
+# Loss
+similarity_function:    'activity' # ['neuron', 'activity']
+clamp_tgt_to_one:       True
+lambda_data:            0.
+lambda_label:           1.
+
 # ~~~~~~~~ Sweep ~~~~~~~~
 
-do_sweep: True
+do_sweep: False
 sweep_configuration: {
   method: 'random',
   count: 200,
