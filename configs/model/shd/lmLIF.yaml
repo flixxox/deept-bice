@@ -16,7 +16,7 @@ checkpoint_unit:              'Epoch' # ['Step', 'Epoch']
 checkpoint_strategy:          'All'   # ['All', 'Best']
 checkpoint_period:            1
 checkpoint_start_after:       5
-units_to_train:               20
+units_to_train:               50
 
 average_last_after_best_checkpoints:  False
 average_last_checkpoints:             False

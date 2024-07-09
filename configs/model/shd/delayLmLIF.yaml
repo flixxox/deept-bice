@@ -16,7 +16,7 @@ checkpoint_unit:              'Epoch' # ['Step', 'Epoch']
 checkpoint_strategy:          'All'   # ['All', 'Best']
 checkpoint_period:            1
 checkpoint_start_after:       5
-units_to_train:               150
+units_to_train:               50
 
 average_last_after_best_checkpoints:  False
 average_last_checkpoints:             False
@@ -75,7 +75,7 @@ optimizers: [
     ],
     lr_scheduler: {
       lr_type: 'CosineAnnealing',
-      tmax: 150,
+      tmax: 50,
       per_step: False
     }
   }
@@ -96,9 +96,9 @@ cell_type:      'soft' # ['soft', 'hard']
 
 # Delays
 init_tau:                   10.05
-max_delay:                  25
+max_delay:                  35
 sigma_init:                 12
-sigma_decrease_final_epoch: 37
+sigma_decrease_final_epoch: 50
 
 # Spikoder
 spikoder: 'random_fixed' # ['random_fixed']
