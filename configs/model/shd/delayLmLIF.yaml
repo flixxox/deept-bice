@@ -51,19 +51,17 @@ optimizers: [
       {
         name: 'weights',
         weight_decay: 0.00001,
-        init_lr: 0.005,
+        init_lr: 0.01,
       },
       {
         name: 'batchnorms',
         weight_decay: 0,
-        init_lr: 0.005,
+        init_lr: 0.01,
       }
     ],
     lr_scheduler: {
-      lr_type: 'OneCycle',
-      max_lr: 0.005,
-      per_step: False,
-      total_steps: 150
+      lr_type: 'Constant',
+      lr:  0.01
     }
   },
   {
@@ -90,8 +88,10 @@ model_input:    ['inp', 'tgt', 'lens', 'labels', 'sos']
 
 n_layers:       3
 hidden_size:    256
-threshold:      0.37
+threshold:      .37
 dropout:        0.4
+beta_init_min:  0.4 # note: before sigmoid
+beta_init_max:  0.9 # note: before sigmoid
 cell_type:      'soft' # ['soft', 'hard']
 
 # Delays

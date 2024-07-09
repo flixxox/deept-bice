@@ -39,6 +39,7 @@ class DelayLMLIFSNN(nn.Module):
         for i in range(1, self.n_layers):
             self.lif_nodes.append(
                 DelayLMLIFLayer(
+                    layer_num=i,
                     readout=False,
                     use_norm=True,
                     input_dim=input_dim,
@@ -46,6 +47,8 @@ class DelayLMLIFSNN(nn.Module):
                     dropout=self.dropout,
                     cell_type=self.cell_type,
                     threshold=self.threshold,
+                    beta_init_min=self.beta_init_min,
+                    beta_init_max=self.beta_init_max,
                     # delayLmLIF
                     tau=(self.init_tau+1e-9)/self.time_step,
                     max_delay=self.max_delay,
@@ -56,6 +59,7 @@ class DelayLMLIFSNN(nn.Module):
 
         self.lif_nodes.append(
             DelayLMLIFLayer(
+                layer_num=self.n_layers,
                 readout=True,
                 use_norm=True,
                 input_dim=self.hidden_size,
@@ -63,6 +67,8 @@ class DelayLMLIFSNN(nn.Module):
                 dropout=self.dropout,
                 cell_type=self.cell_type,
                 threshold=self.threshold,
+                beta_init_min=self.beta_init_min,
+                beta_init_max=self.beta_init_max,
                 # delayLmLIF
                 tau=(self.init_tau+1e-9)/self.time_step,
                 max_delay=self.max_delay,
@@ -87,6 +93,8 @@ class DelayLMLIFSNN(nn.Module):
             n_layers=config['n_layers'],
             num_bins=config['num_bins'],
             cell_type=config['cell_type'],
+            beta_init_min=config['beta_init_min'],
+            beta_init_max=config['beta_init_max'],
             encoding_length=config['encoding_length'],
             similarity_function_descr=config['similarity_function'],
             # delayLIF
@@ -237,7 +245,8 @@ class DelayLMLIFLayer(nn.Module):
 
         assert isinstance(self.tau, float) and self.tau > 1.
 
-        self.beta = (1. - 1. / self.tau)
+        self.beta = nn.Parameter(torch.Tensor(self.hidden_size))
+        self.sigmoid = nn.Sigmoid()
 
         self.init_pos_a = -self.max_delay // 2
         self.init_pos_b = self.max_delay // 2
@@ -278,7 +287,8 @@ class DelayLMLIFLayer(nn.Module):
     def __init(self):
 
         torch.nn.init.kaiming_uniform_(self.delay.weight, nonlinearity='relu')
-        
+        nn.init.uniform_(self.beta, self.beta_init_min, self.beta_init_max)
+
         torch.nn.init.uniform_(self.delay.P, a=self.init_pos_a, b=self.init_pos_b)
         self.delay.clamp_parameters()
 
@@ -313,6 +323,7 @@ class DelayLMLIFLayer(nn.Module):
         assert list(x.shape) == [T, B, I]
 
         U0 = self.random_batchwise_init(B, I)
+        beta = self.sigmoid(self.beta)
 
         o = self.cell_fn(x, U0, U0, self.beta)
 
@@ -334,7 +345,7 @@ class DelayLMLIFLayer(nn.Module):
         St = torch.zeros(B, I).to(device)
 
         for t in range(T):
-            Ut = Ut - theta*St + beta * x[t,:,:]
+            Ut = beta * (Ut - theta*St) + (1 - beta) * x[t,:,:]
             St = self.spike_fct(Ut - theta)
             o.append(St)
 
@@ -346,7 +357,7 @@ class DelayLMLIFLayer(nn.Module):
         theta = self.threshold
 
         for t in range(T):
-            Ut = Ut + beta * x[t,:,:]
+            Ut = beta * Ut + (1 - beta) * x[t,:,:]
             St = self.spike_fct(Ut - theta)
             Ut = (1 - St.detach()) * Ut + St.detach() * U0
             o.append(St)

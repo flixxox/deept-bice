@@ -94,7 +94,7 @@ lambda_label:           1.
 
 # ~~~~~~~~ Sweep ~~~~~~~~
 
-do_sweep: False
+do_sweep: True
 sweep_configuration: {
   method: 'random',
   count: 200,
