@@ -164,6 +164,8 @@ class DelayLMLIFSNN(nn.Module):
         C = self.output_dim
         T_l = self.encoding_length
 
+        all_spikes = []
+
         sos = self.special_token_encoder()
         sos = sos.repeat(B, 1)
 
@@ -182,12 +184,13 @@ class DelayLMLIFSNN(nn.Module):
         x = x.permute(1,0,2) # [B, T, J] -> [T, B, J]
         for snn_lay in self.lif_nodes:
             x = snn_lay(x)
+            all_spikes.append(x.detach().permute(1,0,2))
         x = x.permute(1,0,2) # [T, B, J] -> [B, T, J]
 
         if torch.mean(x) < 0.001:
             print('Warning! Low activity in output!')
         
-        return x, {'tgt': tgt, 'label_seqs': labels}
+        return x, {'tgt': tgt, 'label_seqs': labels, 'all_spikes': all_spikes}
 
     def search_forward(self, x):
         x = x.permute(1,0,2) # [B, T, J] -> [T, B, J]
@@ -271,7 +274,6 @@ class DelayLMLIFLayer(nn.Module):
 
         assert isinstance(self.tau, float) and self.tau > 1.
 
-        self.beta = nn.Parameter(torch.Tensor(self.hidden_size))
         self.sigmoid = nn.Sigmoid()
 
         self.init_pos_a = -self.max_delay // 2
@@ -301,10 +303,17 @@ class DelayLMLIFLayer(nn.Module):
         if not self.readout:
             self.drop = DropoutOverTime(self.dropout)
 
+        if self.cell_type == 'soft' or self.cell_type == 'hard':
+            self.beta = nn.Parameter(torch.Tensor(self.hidden_size))
+        else:
+            self.beta = (1. - 1. / self.tau)
+
         if self.cell_type == 'soft':
             self.cell_fn = self._soft_reset_cell
         elif self.cell_type == 'hard':
             self.cell_fn = self._hard_reset_cell
+        elif self.cell_type == 'original':
+            self.cell_fn = self._original_cell
         else:
             raise ValueError(f'Unrecognized cell_type argument {self.cell_type}!')
 
@@ -312,8 +321,10 @@ class DelayLMLIFLayer(nn.Module):
     
     def __init(self):
 
+        if self.cell_type == 'soft' or self.cell_type == 'hard':
+            nn.init.uniform_(self.beta, self.beta_init_min, self.beta_init_max)
+
         torch.nn.init.kaiming_uniform_(self.delay.weight, nonlinearity='relu')
-        nn.init.uniform_(self.beta, self.beta_init_min, self.beta_init_max)
 
         torch.nn.init.uniform_(self.delay.P, a=self.init_pos_a, b=self.init_pos_b)
         self.delay.clamp_parameters()
@@ -348,8 +359,8 @@ class DelayLMLIFLayer(nn.Module):
 
         assert list(x.shape) == [T, B, I]
 
-        U0 = self.random_batchwise_init(B, I)
-        beta = self.sigmoid(self.beta)
+        #U0 = self.random_batchwise_init(B, I)
+        U0 = torch.zeros(B, I).to(device)
 
         o = self.cell_fn(x, U0, U0, self.beta)
 
@@ -368,6 +379,7 @@ class DelayLMLIFLayer(nn.Module):
         device = x.device
 
         theta = self.threshold
+        beta = self.sigmoid(self.beta)
         St = torch.zeros(B, I).to(device)
 
         for t in range(T):
@@ -382,10 +394,25 @@ class DelayLMLIFLayer(nn.Module):
         T = x.shape[0]
         theta = self.threshold
 
+        beta = self.sigmoid(self.beta)
+
         for t in range(T):
             Ut = beta * Ut + (1 - beta) * x[t,:,:]
             St = self.spike_fct(Ut - theta)
             Ut = (1 - St.detach()) * Ut + St.detach() * U0
+            o.append(St)
+
+        return torch.stack(o, dim=0)
+
+    def _original_cell(self, x, Ut, U0, beta):
+        o = []
+        T = x.shape[0]
+        theta = self.threshold
+
+        for t in range(T):
+            Ut = beta * Ut + x[t,:,:]
+            St = self.spike_fct(Ut - theta)
+            Ut = (1 - St.detach()) * Ut
             o.append(St)
 
         return torch.stack(o, dim=0)

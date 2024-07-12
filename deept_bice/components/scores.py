@@ -21,6 +21,54 @@ def _activity_similarity_fn(out, tgt, reduce=True):
     return loss
 
 
+@register_score('FiringRate')
+class FiringRate(Score):
+
+    def __init__(self, input_keys, reduce_type, **kwargs):
+        super().__init__(input_keys, reduce_type)
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+        self.register_accumulator('avg_fr')
+        self.register_accumulator('std_fr')
+
+    @staticmethod
+    def create_from_config(config, input_keys, reduce_type):
+        return FiringRate(
+            input_keys, reduce_type
+        )
+
+    def __call__(self, out, mask, all_spikes):
+        B = out.shape[0]
+        T = out.shape[1]
+
+        measured_layers = len(all_spikes)
+
+        assert list(mask.shape) == [B, T]
+
+        numel = mask.sum() * measured_layers
+
+        frs = torch.mean(all_spikes[0], dim=-1)
+        frs = frs * mask
+        avg_fr = torch.mean(frs)
+        std_fr = torch.std(frs)
+
+        for x in all_spikes[1:]:
+            frs = torch.mean(x, dim=-1)
+            frs = frs * mask
+            avg_fr += torch.mean(frs)
+            std_fr += torch.std(frs)
+
+        avg_fr = avg_fr / measured_layers
+        std_fr = std_fr / measured_layers
+
+        self.accumulators[0].increase(avg_fr, numel)
+        self.accumulators[1].increase(std_fr, numel)
+
+        return avg_fr, numel
+
+
 @register_score('LMRegressionLoss')
 class LMRegressionLoss(Score):
 
