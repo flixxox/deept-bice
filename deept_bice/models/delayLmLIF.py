@@ -29,10 +29,12 @@ class DelayLMLIFSNN(nn.Module):
         self.input_dim = self.input_dim // self.num_bins
 
         self.spikoder = create_spikoder(
+            self.spikoder_descr,
             self.input_dim,
             self.output_dim,
             self.encoding_length,
-            self.resample_labels
+            self.sample_labels,
+            self.resample_every_step
         )
         
         input_dim = self.input_dim
@@ -97,6 +99,9 @@ class DelayLMLIFSNN(nn.Module):
             beta_init_min=config['beta_init_min'],
             beta_init_max=config['beta_init_max'],
             encoding_length=config['encoding_length'],
+            spikoder_descr=config['spikoder'],
+            sample_labels=config['sample_labels'],
+            resample_every_step=config['resample_every_step'],
             similarity_function_descr=config['similarity_function'],
             # delayLIF
             init_tau=config['init_tau'],
@@ -364,6 +369,7 @@ class DelayLMLIFLayer(nn.Module):
             o.append(St)
 
         return torch.stack(o, dim=0)
+
 
 class RandomBatchwiseInit(nn.Module):
 

@@ -69,7 +69,7 @@ optimizers: [
 # ~~~~~~~~ Model ~~~~~~~~
 
 model:          'lmLIF'
-model_input:    ['inp', 'tgt', 'lens', 'labels', 'sos']
+model_input:    ['inp', 'tgt', 'lens', 'labels']
 
 n_layers:       3
 hidden_size:    256

@@ -9,17 +9,14 @@ from deept.components.scores import (
 
 def _per_neuron_similarity_fn(out, tgt, reduce=True):
         loss = torch.abs(out - tgt)
-        # Always reduce feature dim
+        # Always reduce feature dim.
         loss = torch.mean(loss, dim=-1)
         return loss
     
 def _activity_similarity_fn(out, tgt, reduce=True):
-
     out = torch.mean(out, dim=-1)
     tgt = torch.mean(tgt, dim=-1)
-
     loss = torch.pow(out - tgt, 2)
-
     return loss
 
 

@@ -8,7 +8,10 @@ from spikingjelly.activation_based import surrogate
 
 from deept.utils.debug import my_print
 from deept.components.model import register_model
-from deept_bice.components.spikoder import create_spikoder
+from deept_bice.components.spikoder import (
+    create_spikoder,
+    RandomFixedSpecialTokenEncoder
+)
 
 
 @register_model('lmLIF')
@@ -29,6 +32,11 @@ class LMLIFSNN(nn.Module):
             self.encoding_length,
             self.sample_labels,
             self.resample_every_step
+        )
+
+        self.special_token_encoder = RandomFixedSpecialTokenEncoder(
+            self.input_dim,
+            self.special_token_fr,
         )
         
         input_dim = self.input_dim
@@ -81,16 +89,20 @@ class LMLIFSNN(nn.Module):
             encoding_length=config['encoding_length'],
             spikoder_descr=config['spikoder'],
             sample_labels=config['sample_labels'],
+            special_token_fr=config['special_token_fr'],
             resample_every_step=config['resample_every_step'],
             similarity_function_descr=config['similarity_function']
         )
 
-    def forward(self, x, tgt, lens, c, sos):
+    def forward(self, x, tgt, lens, c):
         B = x.shape[0]
         T = x.shape[1]
         J = self.input_dim
         C = self.output_dim
         T_l = self.encoding_length
+
+        sos = self.special_token_encoder()
+        sos = sos.repeat(B, 1)
 
         assert list(x.shape) == [B, T, J]
         assert list(tgt.shape) == [B, T+1, J]
@@ -113,6 +125,11 @@ class LMLIFSNN(nn.Module):
             print('Warning! Low activity in output!')
         
         return x, {'tgt': tgt, 'label_seqs': labels}
+
+    def search_forward(self, x):
+        for snn_lay in self.lif_nodes:
+            x = snn_lay(x)
+        return x
 
     def __create_param_groups(self):
         weights = []

@@ -36,7 +36,7 @@ class RandomFixedSpecialTokenEncoder(nn.Module):
             requires_grad=False
         )
 
-    def get_special_token(self):
+    def forward(self):
         return self.sos.view(1, self.input_dim)
 
 
@@ -57,8 +57,10 @@ class LinearSpikoder(nn.Module):
         self.sample_labels = sample_labels
         self.resample_every_step = resample_every_step
 
-        self.dfr = (1/self.C - 1/self.C**2)
-        self.frs = [round(self.dfr*i, 3) for i in range(1, self.C+1)]
+        C = self.C
+        fr_start = 1/C
+        dfr = (1-(2/C))/(C-1)
+        self.frs = [round(fr_start + dfr*i, 3) for i in range(0, C)]
 
         self.dummy_param = nn.Parameter(torch.empty(0), requires_grad=False)
 

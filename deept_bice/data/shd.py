@@ -11,8 +11,6 @@ from deept.data.dataloader import register_dataloader
 from deept_bice.components.spikoder import RandomFixedSpecialTokenEncoder
 
 
-torch.set_printoptions(edgeitems=100)
-
 def pad_sequence_collate_as_dict(batch):
     inp = []
     tgt = []
@@ -20,13 +18,12 @@ def pad_sequence_collate_as_dict(batch):
     mask = []
     label_mask = []
     labels = []
-    sos = []
 
     placeholder_inp = Context['placeholder_inp']
     placeholder_tgt = Context['placeholder_tgt']
     encoding_length = Context['encoding_length']
 
-    for data_b, label_b, sos_b in batch:
+    for data_b, label_b in batch:
         l = len(data_b)
 
         inp_b = np.append(data_b, placeholder_inp, axis=0)
@@ -44,7 +41,6 @@ def pad_sequence_collate_as_dict(batch):
         label_mask.append(label_mask_b)
         lens.append(l)
         labels.append(label_b)
-        sos.append(sos_b)
 
     inp = torch.nn.utils.rnn.pad_sequence(inp, batch_first=True)
     tgt = torch.nn.utils.rnn.pad_sequence(tgt, batch_first=True)
@@ -54,8 +50,6 @@ def pad_sequence_collate_as_dict(batch):
 
     labels = torch.as_tensor(labels)
     lens = torch.as_tensor(lens)
-    sos = torch.cat(sos, dim=0)
-
     return {
         'tensors': {
             'inp': inp.float(),
@@ -63,8 +57,7 @@ def pad_sequence_collate_as_dict(batch):
             'labels': labels.long(),
             'lens': lens,
             'mask': mask.float(),
-            'label_mask': label_mask.float(),
-            'sos': sos
+            'label_mask': label_mask.float()
         }
     }
 
@@ -81,7 +74,6 @@ class BinnedSpikingHeidelbergDigits(SpikingHeidelbergDigits):
             root,
             n_bins,
             input_dim,
-            special_token_fr,
             train=None,
             duration=None,
     ):
@@ -94,11 +86,6 @@ class BinnedSpikingHeidelbergDigits(SpikingHeidelbergDigits):
             duration,
         )
         self.n_bins = n_bins
-
-        self.special_token_encoder = RandomFixedSpecialTokenEncoder(
-            input_dim//n_bins,
-            special_token_fr,
-        )
 
     @staticmethod
     def create_from_config(config, is_train):
@@ -118,7 +105,6 @@ class BinnedSpikingHeidelbergDigits(SpikingHeidelbergDigits):
             config['dataset_root'],
             config['num_bins'],
             config['input_dim'],
-            config['special_token_fr'],
             train=is_train,
             duration=config['time_step'],
         )
@@ -130,10 +116,8 @@ class BinnedSpikingHeidelbergDigits(SpikingHeidelbergDigits):
         binned_frames = np.zeros((frames.shape[0], binned_len))
         for i in range(binned_len):
             binned_frames[:,i] = frames[:, self.n_bins*i : self.n_bins*(i+1)].sum(axis=1)
-
-        sos = self.special_token_encoder.get_special_token()
         
-        return binned_frames, label, sos
+        return binned_frames, label
 
 
 @register_dataloader('shd')
