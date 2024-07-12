@@ -14,7 +14,11 @@ from deept.utils.debug import my_print
 from deept.utils.globals import Settings
 from deept.components.model import register_model
 from deept_bice.components.modules import DropoutOverTime
-from deept_bice.components.spikoder import create_spikoder
+from deept_bice.components.spikoder import (
+    create_spikoder,
+    RandomFixedSpecialTokenEncoder
+)
+
 
 
 @register_model('delayLmLIF')
@@ -35,6 +39,11 @@ class DelayLMLIFSNN(nn.Module):
             self.encoding_length,
             self.sample_labels,
             self.resample_every_step
+        )
+
+        self.special_token_encoder = RandomFixedSpecialTokenEncoder(
+            self.input_dim,
+            self.special_token_fr,
         )
         
         input_dim = self.input_dim
@@ -101,6 +110,7 @@ class DelayLMLIFSNN(nn.Module):
             encoding_length=config['encoding_length'],
             spikoder_descr=config['spikoder'],
             sample_labels=config['sample_labels'],
+            special_token_fr=config['special_token_fr'],
             resample_every_step=config['resample_every_step'],
             similarity_function_descr=config['similarity_function'],
             # delayLIF
@@ -147,12 +157,15 @@ class DelayLMLIFSNN(nn.Module):
             'batchnorms': [p for p in batchnorms],
         }
 
-    def forward(self, x, tgt, lens, c, sos):
+    def forward(self, x, tgt, lens, c):
         B = x.shape[0]
         T = x.shape[1]
         J = self.input_dim
         C = self.output_dim
         T_l = self.encoding_length
+
+        sos = self.special_token_encoder()
+        sos = sos.repeat(B, 1)
 
         assert list(x.shape) == [B, T, J]
         assert list(tgt.shape) == [B, T+1, J]
@@ -175,6 +188,13 @@ class DelayLMLIFSNN(nn.Module):
             print('Warning! Low activity in output!')
         
         return x, {'tgt': tgt, 'label_seqs': labels}
+
+    def search_forward(self, x):
+        x = x.permute(1,0,2) # [B, T, J] -> [T, B, J]
+        for snn_lay in self.lif_nodes:
+            x = snn_lay(x)
+        x = x.permute(1,0,2) # [T, B, J] -> [B, T, J]
+        return x
 
     # ~~~~~ Callbacks and Callback helpers
 

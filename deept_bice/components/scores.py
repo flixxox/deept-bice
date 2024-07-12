@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+from deept.utils.globals import Context
 from deept.components.scores import (
     Score,
     register_score
@@ -169,3 +170,71 @@ class LMAccuracy(Score):
         self.accumulators[0].increase(acc, numel)
         
         return acc, numel
+
+
+@register_score('LMTrueAccuracy')
+class LMTrueAccuracy(Score):
+
+    def __init__(self, input_keys, reduce_type, **kwargs):
+        super().__init__(input_keys, reduce_type)
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+        self.input_dim = self.input_dim // self.num_bins
+        
+        if self.similarity_fn_descr == 'neuron':
+            self.similarity_fn = _per_neuron_similarity_fn
+        elif self.similarity_fn_descr == 'activity':
+            self.similarity_fn = _activity_similarity_fn
+        else:
+            raise ValueError(f'Did not recognize loss_function! Given: {self.similarity_fn_descr}')
+
+        self.idx = nn.Parameter(
+            torch.arange(self.encoding_length),
+            requires_grad=False
+        )
+        
+        self.register_accumulator('search_acc')
+
+    @staticmethod
+    def create_from_config(config, input_keys, reduce_type):
+
+        search_algorithm_descr = config['lm_search_algorithm']
+
+        if search_algorithm_descr == 'greedy':
+            from deept_bice.components.seeker import GreedySearch
+            search_algorithm = GreedySearch.create_from_config(config, Context['model'])
+        else:
+            raise ValueError(f'Unrecognized search algorithm {search_algorithm_descr}!')
+
+        return LMTrueAccuracy(
+            input_keys, reduce_type,
+            search_algorithm = search_algorithm,
+            num_bins = config['num_bins'],
+            input_dim = config['input_dim'],
+            num_classes = config['output_dim'],
+            encoding_length = config['encoding_length'],
+            similarity_fn_descr = config['similarity_function'],
+        )
+
+    def __call__(self, out, x, lens, labels):
+        if not self.search_algorithm.model.training:
+            B = out.shape[0]
+            T = out.shape[1]
+            J = self.input_dim
+            C = self.num_classes
+            T_l = self.encoding_length
+            
+            pred_label, _ = self.search_algorithm(x, lens)
+
+            numel = B
+            acc = (pred_label == labels).sum() * 100
+            acc = acc / numel
+
+            self.accumulators[0].increase(acc, numel)
+            
+            return acc, numel
+        else:
+            self.accumulators[0].increase(0, 1)
+            return 0, 1
