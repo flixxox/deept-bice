@@ -123,7 +123,7 @@ class GreedySearch(nn.Module):
         label_seqs = label_seqs.unsqueeze(0)
         pred_label_seq = pred_label_seq.unsqueeze(1)
 
-        similarity = self.similarity_fn(pred_label_seq, label_seqs, reduce=False)
+        similarity = self.similarity_fn(pred_label_seq, label_seqs)
 
         assert list(similarity.shape) == [B, C, t]
 

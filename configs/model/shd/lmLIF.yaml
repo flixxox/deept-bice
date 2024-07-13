@@ -85,7 +85,7 @@ beta_init_max:  0.9 # note: before sigmoid
 cell_type:      'soft' # ['soft', 'hard']
 
 # Spikoder
-spikoder:             'sinusoidal' # ['linear', 'sinusoidal']
+spikoder:             'population' # ['linear', 'sinusoidal', 'population']
 sample_labels:        True
 resample_every_step:  False
 encoding_length:      10
@@ -94,7 +94,7 @@ encoding_length:      10
 special_token_fr: 0.5
 
 # Loss
-similarity_function:    'activity' # ['neuron', 'activity']
+similarity_function:    'neuron' # ['neuron', 'activity']
 clamp_tgt_to_one:       True
 lambda_data:            1.
 lambda_label:           1.

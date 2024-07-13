@@ -8,16 +8,15 @@ from deept.components.scores import (
 )
 
 
-def _per_neuron_similarity_fn(out, tgt, reduce=True):
+def _per_neuron_similarity_fn(out, tgt):
         loss = torch.abs(out - tgt)
-        # Always reduce feature dim.
         loss = torch.mean(loss, dim=-1)
         return loss
     
-def _activity_similarity_fn(out, tgt, reduce=True):
+def _activity_similarity_fn(out, tgt):
     out = torch.mean(out, dim=-1)
     tgt = torch.mean(tgt, dim=-1)
-    loss = torch.pow(out - tgt, 2)
+    loss = torch.abs(out - tgt)
     return loss
 
 
@@ -49,19 +48,15 @@ class FiringRate(Score):
 
         numel = mask.sum() * measured_layers
 
-        frs = torch.mean(all_spikes[0], dim=-1)
+        frs = torch.mean(all_spikes[-1], dim=-1)
         frs = frs * mask
         avg_fr = torch.mean(frs)
         std_fr = torch.std(frs)
 
-        for x in all_spikes[1:]:
-            frs = torch.mean(x, dim=-1)
-            frs = frs * mask
-            avg_fr += torch.mean(frs)
-            std_fr += torch.std(frs)
-
-        avg_fr = avg_fr / measured_layers
-        std_fr = std_fr / measured_layers
+        # for x in all_spikes[1:]:
+        #     frs = torch.mean(x, dim=-1)
+        #     frs = frs * mask
+        #     avg_fr += torch.mean(frs)
 
         self.accumulators[0].increase(avg_fr, numel)
         self.accumulators[1].increase(std_fr, numel)
@@ -116,7 +111,7 @@ class LMRegressionLoss(Score):
 
         if self.clamp_tgt_to_one:
             tgt = torch.clamp(tgt, max=1)
-
+        
         loss = self.similarity_fn(out, tgt)
 
         assert list(loss.shape) == [B, T]
@@ -124,10 +119,12 @@ class LMRegressionLoss(Score):
         data_mask = mask - label_mask
         numel = (lambda_data * data_mask.sum()
             + lambda_label * label_mask.sum())
-
+        
         loss = loss * mask # Remove padding
+
         loss = (lambda_data * data_mask * loss
             + lambda_label * label_mask * loss)
+
         loss = loss.sum() / numel
         
         # The loss is super small, we
@@ -201,7 +198,7 @@ class LMAccuracy(Score):
         out = out.unsqueeze(1)
         label_seqs = label_seqs.unsqueeze(0)
 
-        loss = self.similarity_fn(out, label_seqs, reduce=False)
+        loss = self.similarity_fn(out, label_seqs)
 
         assert list(loss.shape) == [B, C, T_l]
 

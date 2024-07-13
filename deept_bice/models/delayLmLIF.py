@@ -189,6 +189,8 @@ class DelayLMLIFSNN(nn.Module):
 
         if torch.mean(x) < 0.001:
             print('Warning! Low activity in output!')
+
+        assert list(x.shape) == [B, T+1, J]
         
         return x, {'tgt': tgt, 'label_seqs': labels, 'all_spikes': all_spikes}
 
