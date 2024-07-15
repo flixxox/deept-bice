@@ -20,8 +20,8 @@ units_to_train:               150
 
 average_last_after_best_checkpoints:  False
 average_last_checkpoints:             False
-best_checkpoint_indicator:            'search_acc'
-best_checkpoint_indicator_goal:       'max' # ['min', 'max']
+best_checkpoint_indicator:            'lmloss'
+best_checkpoint_indicator_goal:       'min' # ['min', 'max']
 
 # ~~~~~~~~ Criterions, Scores, Optimizer ~~~~~~~~
 
@@ -36,23 +36,7 @@ criterions: [
   }
 ]
 
-scores: [
-  {
-    score_type: 'LMAccuracy',
-    input_keys: ['labels', 'label_seqs', 'lens'],
-    reduce_type: 'avg_counts'
-  },
-  {
-    score_type: 'LMTrueAccuracy',
-    input_keys: ['inp', 'lens', 'labels'],
-    reduce_type: 'avg_counts'
-  },
-  {
-    score_type: 'FiringRate',
-    input_keys: ['mask', 'all_spikes'],
-    reduce_type: 'avg_counts'
-  }
-]
+scores: []
 
 optimizers: [
   {
@@ -95,13 +79,13 @@ optimizers: [
 
 # ~~~~~~~~ Model ~~~~~~~~
 
-model:          'delayLmLIF'
-model_input:    ['inp', 'tgt', 'lens', 'labels']
+model:          'toyWrapper'
+model_input:    ['inp']
 
-n_layers:       5
-hidden_size:    256
+n_layers:       3
+hidden_size:    1024
 threshold:      0.37
-dropout:        0.4 
+dropout:        0 #0.4 
 beta_init_min:  0.4 # note: before sigmoid
 beta_init_max:  0.9 # note: before sigmoid
 cell_type:      'soft' # ['soft', 'hard', 'original']
@@ -124,19 +108,19 @@ special_token_fr: 0.5
 # Loss
 similarity_function:    'neuron' # ['neuron', 'activity']
 clamp_tgt_to_one:       True
-lambda_data:            0.1
-lambda_label:           1.0
+lambda_data:            1.
+lambda_label:           0.
 
 # Search
 lm_search_algorithm: 'greedy' # ['greedy']
 
 # ~~~~~~~~ Sweep ~~~~~~~~
 
-do_sweep: True
+do_sweep: False
 sweep_configuration: {
-  method: 'grid',
+  method: 'random',
   count: 200,
   parameters: {
-    seed: {values: [0, 41, 80420, 90, 172]}
+    seed: {values: [0, 41]}, #80420, 90, 172]},
   }
 }

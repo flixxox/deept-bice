@@ -53,7 +53,7 @@ class DelayLMLIFSNN(nn.Module):
                 DelayLMLIFLayer(
                     layer_num=i,
                     readout=False,
-                    use_norm=True,
+                    use_norm=False,
                     input_dim=input_dim,
                     hidden_size=self.hidden_size,
                     dropout=self.dropout,
@@ -73,7 +73,7 @@ class DelayLMLIFSNN(nn.Module):
             DelayLMLIFLayer(
                 layer_num=self.n_layers,
                 readout=True,
-                use_norm=True,
+                use_norm=False,
                 input_dim=self.hidden_size,
                 hidden_size=self.input_dim,
                 dropout=self.dropout,
@@ -206,30 +206,13 @@ class DelayLMLIFSNN(nn.Module):
     def train_step_end_callback(self, step):
         for lif_node in self.lif_nodes:
             lif_node.delay.clamp_parameters()
-        
+
     def train_epoch_end_callback(self, last_epoch):
         self.__decrease_sig(last_epoch)
-
-    def test_start_callback(self):
-        self.__backup()
-        for lif_node in self.lif_nodes:
-            lif_node.delay.SIG *= 0
-            lif_node.delay.version = 'max'
-            lif_node.delay.DCK.version = 'max'
-        self.__round_delay()
-
-    def test_end_callback(self):
-        my_print('Loading backup!')
-        for lif_node in self.lif_nodes:
-            lif_node.delay.version = 'gauss'
-            lif_node.delay.DCK.version = 'gauss'
-        self.load_state_dict(torch.load(self.backup_checkpoint), strict=True)
-        remove(self.backup_checkpoint)
 
     # ~~~~~ Helpers
 
     def __decrease_sig(self, last_epoch):
-
         if last_epoch < self.sigma_decrease_final_epoch and self.sigma > 0.23:
             alpha = (0.23 / self.sigma_init) ** (1 / self.sigma_decrease_final_epoch)
             sigma = self.sigma * alpha
@@ -250,18 +233,6 @@ class DelayLMLIFSNN(nn.Module):
             for lif_node in self.lif_nodes:
                 lif_node.delay.P.round_()
                 lif_node.delay.clamp_parameters()
-
-    def __load_from_delay_snn_init(self):
-        ckpt = {}
-        ckpt_loaded = torch.load('/Users/fschmidt/code/SNN-delays/snn_delays_init.pt')
-        for k,v in ckpt_loaded.items():
-            k_new = k.replace('model.0', 'lif_nodes.0.delay')
-            k_new = k_new.replace('model.1', 'lif_nodes.0.norm')
-            k_new = k_new.replace('model.4', 'lif_nodes.1.delay')
-            k_new = k_new.replace('model.5', 'lif_nodes.1.norm')
-            k_new = k_new.replace('model.8', 'readout.delay')
-            ckpt[k_new] = ckpt_loaded[k]
-        self.load_state_dict(ckpt, strict=True)
 
 
 class DelayLMLIFLayer(nn.Module):
@@ -303,10 +274,10 @@ class DelayLMLIFLayer(nn.Module):
         if self.use_norm:
             self.norm = nn.BatchNorm1d(self.hidden_size)
         if not self.readout:
-            self.drop = DropoutOverTime(self.dropout)
+            self.drop = nn.Dropout(self.dropout)
 
         if self.cell_type == 'soft' or self.cell_type == 'hard':
-            self.beta = nn.Parameter(torch.Tensor(self.hidden_size))
+            self.beta = nn.Parameter(torch.empty(self.hidden_size))
         else:
             self.beta = (1. - 1. / self.tau)
 
@@ -319,10 +290,15 @@ class DelayLMLIFLayer(nn.Module):
         else:
             raise ValueError(f'Unrecognized cell_type argument {self.cell_type}!')
 
+        if not self.use_norm:
+            self.scale = nn.Parameter(torch.empty(self.hidden_size))
+            self.bias = nn.Parameter(torch.empty(self.hidden_size))
+            torch.nn.init.constant_(self.scale, 1.)
+            torch.nn.init.constant_(self.bias, 1.)
+
         self.__init()
     
     def __init(self):
-
         if self.cell_type == 'soft' or self.cell_type == 'hard':
             nn.init.uniform_(self.beta, self.beta_init_min, self.beta_init_max)
 
@@ -356,12 +332,13 @@ class DelayLMLIFLayer(nn.Module):
 
         if self.use_norm:
             x = self.norm(x.reshape(T*B, I, 1)).reshape(T, B, I)
+        else:
+            x = self.scale * x + self.bias
 
         # ~~~~ LIF
 
         assert list(x.shape) == [T, B, I]
 
-        #U0 = self.random_batchwise_init(B, I)
         U0 = torch.zeros(B, I).to(device)
 
         o = self.cell_fn(x, U0, U0, self.beta)
