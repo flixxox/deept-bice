@@ -98,8 +98,8 @@ optimizers: [
 model:          'delayLmLIF'
 model_input:    ['inp', 'tgt', 'lens', 'labels']
 
-n_layers:       5
-hidden_size:    256
+n_layers:       3
+hidden_size:    1024
 threshold:      0.37
 dropout:        0.4 
 beta_init_min:  0.4 # note: before sigmoid
@@ -124,7 +124,7 @@ special_token_fr: 0.5
 # Loss
 similarity_function:    'neuron' # ['neuron', 'activity']
 clamp_tgt_to_one:       True
-lambda_data:            0.1
+lambda_data:            1.0
 lambda_label:           1.0
 
 # Search

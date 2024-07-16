@@ -54,28 +54,49 @@ search_algorithm.to(Settings.get_device())
 
 T_l = config['encoding_length']
 
-all_label_seqs = model.spikoder.get_all_labels() 
-
-
-acc_accum = 0
 numel_accum = 0
+accs_accum = [0. for t in range(T_l)]
+redecisions_accum = [0. for t in range(T_l)]
+
 with torch.no_grad():
     for data in dev_dataloader:
+
         data = data['tensors']
-        
+
         x = data['inp'].to(Settings.get_device())
         lens = data['lens'].to(Settings.get_device())
         labels = data['labels'].to(Settings.get_device())
-
         B = x.shape[0]
-        
-        pred_label, _ = search_algorithm(x, lens)
 
-        acc = (pred_label == labels).sum() * 100
-        acc_accum += acc
+        pred_label_prev = None
+        for t in range(T_l):
+            pred_label_cur, _ = search_algorithm(x, lens, early_abort_at=t+1)
+            acc = (pred_label_cur == labels).sum() * 100
+            accs_accum[t] += acc
+
+            if pred_label_prev is not None:
+                redecisions = (pred_label_cur != pred_label_prev).sum()
+                redecisions_accum[t] += redecisions
+
+            pred_label_prev = pred_label_cur
+
         numel_accum += B
 
-avg_acc = acc_accum / numel_accum
+# === Print
 
-print(f'Avg Test Acc: {avg_acc:4.2f}!')
+for t in range(T_l):
+    avg_test_acc_t = accs_accum[t] / numel_accum
+    avg_redecisions_t = redecisions_accum[t] / numel_accum
+    print(f'Avg Test Acc {t}: {avg_test_acc_t:4.2f}, Percentage of Redecisions {avg_redecisions_t*100:4.2f}%!')
+
+print('Avg test_acc')
+for t in range(T_l):
+    avg_test_acc_t = accs_accum[t] / numel_accum
+    print(f'({t+1},{avg_test_acc_t:4.2f})', end='')
+print('\nAvg redecisions')
+for t in range(T_l):
+    avg_redecisions_t = redecisions_accum[t] / numel_accum
+    print(f'({t+1},{avg_redecisions_t*100:4.2f})', end='')
+print('\n')
+
 

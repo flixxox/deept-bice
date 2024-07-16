@@ -36,13 +36,17 @@ class GreedySearch(nn.Module):
             similarity_fn_descr = config['similarity_function']
         )
 
-    def forward(self, x, lens):
+    def forward(self, x, lens, early_abort_at=None):
         B = x.shape[0]
         T = x.shape[1]
         J = self.input_dim
         C = self.num_classes
         T_l = self.T_l
         device = x.device
+
+        T_fin = T_l
+        if early_abort_at is not None:
+            T_fin = early_abort_at
         
         label_seqs = self.model.spikoder.get_all_labels()
 
@@ -76,7 +80,8 @@ class GreedySearch(nn.Module):
             pred_label_seq, label_seqs, 1
         )
 
-        for t in range(1,T_l+1):
+        t = 1
+        while t <= T_fin:
 
             assert list(pred_label_sofar.shape) == [B]
             
@@ -97,8 +102,10 @@ class GreedySearch(nn.Module):
                 pred_label_seq, label_seqs, t
             )
 
+            t += 1
+
         assert list(pred_label_sofar.shape) == [B]
-        assert list(pred_label_seq.shape) == [B, T_l, J]
+        assert list(pred_label_seq.shape) == [B, T_fin, J]
 
         return pred_label_sofar, pred_label_seq
 
