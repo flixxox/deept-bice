@@ -11,7 +11,10 @@ from deept.train import create_dataloader
 from deept.utils.globals import Settings, Context
 from deept.utils.checkpoint_manager import CheckpointManager
 
-from deept_bice.components.seeker import GreedySearch
+from deept_bice.components.seeker import (
+    GreedySearch,
+    ParallelSearch
+)
 
 
 # === Setup
@@ -46,7 +49,7 @@ print(model)
 
 train_dataloader, dev_dataloader = create_dataloader(config)
 
-search_algorithm = GreedySearch.create_from_config(config, model)
+search_algorithm = ParallelSearch.create_from_config(config, model)
 
 search_algorithm.to(Settings.get_device())
 
@@ -70,6 +73,8 @@ with torch.no_grad():
         B = x.shape[0]
         
         pred_label, _ = search_algorithm(x, lens)
+
+        assert list(pred_label.shape) == [B]
 
         acc = (pred_label == labels).sum() * 100
         acc_accum += acc
